@@ -500,7 +500,7 @@ function _showAuthModal() {
   modal.innerHTML = `
     <div style="background:var(--bg2);border:2px solid var(--border);padding:24px;max-width:360px;width:90%;font-family:monospace;display:flex;flex-direction:column;gap:10px;">
       <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--accent);">☁ CLOUD SAVE</div>
-      <input id="auth-username" placeholder="Username" autocomplete="username"
+      <input id="auth-username" placeholder="Email" autocomplete="email"
         style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px;font-size:12px;font-family:monospace;">
       <input id="auth-password" type="password" placeholder="Password" autocomplete="current-password"
         style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px;font-size:12px;font-family:monospace;">
