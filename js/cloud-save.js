@@ -1,5 +1,6 @@
-const SAVE_SERVER = 'https://save.pokelike.xyz';
 const SAVE_SCHEMA_VERSION = 2;
+const SUPABASE_URL = (window && window.__SUPABASE_CONFIG && window.__SUPABASE_CONFIG.url) || 'https://uhihaxjcgilpvkzpdahd.supabase.co';
+const SUPABASE_ANON_KEY = (window && window.__SUPABASE_CONFIG && window.__SUPABASE_CONFIG.anonKey) || 'sb_publishable_7U0XJlS2mxaC8v6KvANHgQ_4A06HxfW';
 
 // Per-call-site timeouts (ms). Without these, a stalled or DDoSed server
 // hangs fetches indefinitely — freezing the title screen because initGame()
@@ -16,6 +17,20 @@ function _fetchWithTimeout(url, opts = {}, ms = SAVE_FETCH_TIMEOUT_MS.load) {
   const timer = setTimeout(() => ctl.abort(), ms);
   return fetch(url, { ...opts, signal: ctl.signal })
     .finally(() => clearTimeout(timer));
+}
+
+function _getSupabaseClient() {
+  if (typeof window === 'undefined' || !window.supabase) {
+    throw new Error('Supabase client not loaded. Set the URL and anon key in index.html.');
+  }
+  return window.supabase;
+}
+
+function _usernameToEmail(username) {
+  const value = String(username || '').trim();
+  if (!value) return 'player@pokelike.local';
+  if (value.includes('@')) return value.toLowerCase();
+  return `${value.toLowerCase().replace(/[^a-z0-9._@+-]/g, '') || 'player'}@pokelike.local`;
 }
 
 // Reachability state for the cloud-button indicator: 'loading' | 'online'
@@ -299,16 +314,21 @@ async function _pushLocal() {
   const uuid = _getSaveUuid();
   if (!uuid) return;
   try {
+    const supabase = _getSupabaseClient();
     const save = _getLocalSave();
-    const res = await _fetchWithTimeout(`${SAVE_SERVER}/save/${uuid}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(save),
-    }, SAVE_FETCH_TIMEOUT_MS.push);
-    if (res.ok) {
+    const username = _getUsername() || 'player';
+    const { error } = await supabase.from('player_saves').upsert({
+      user_id: uuid,
+      username,
+      save_data: save,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' });
+
+    if (!error) {
       localStorage.setItem('poke_last_cloud_sync', String(save.lastSaved));
       _setCloudStatus('online');
     } else {
+      console.warn('Supabase push failed:', error);
       _setCloudStatus('offline');
     }
   } catch (e) {
@@ -325,21 +345,24 @@ async function syncToCloud() {
   if (!uuid || _syncing) return;
   _syncing = true;
   try {
-    // Only push when the pull actually merged. If the pull failed (timeout,
-    // network blip, 5xx), a push here would clobber whatever a second device
-    // uploaded since our last successful sync — exactly the race the
-    // pull-merge-push pipeline exists to prevent. Next sync trigger
-    // (visibilitychange, run end) retries the whole pipeline from scratch.
     let pulled = false;
     try {
-      const res = await _fetchWithTimeout(`${SAVE_SERVER}/save/${uuid}`, {}, SAVE_FETCH_TIMEOUT_MS.sync);
-      if (res.ok) {
-        const cloud = await res.json();
-        _applyCloudSave(cloud);
+      const supabase = _getSupabaseClient();
+      const { data, error } = await supabase
+        .from('player_saves')
+        .select('save_data')
+        .eq('user_id', uuid)
+        .maybeSingle();
+
+      if (!error && data && data.save_data) {
+        _applyCloudSave(data.save_data);
         pulled = true;
         _setCloudStatus('online');
-      } else {
+      } else if (error && error.code !== 'PGRST116') {
+        console.warn('Cloud pull during sync failed:', error);
         _setCloudStatus('offline');
+      } else {
+        _setCloudStatus('online');
       }
     } catch (e) {
       console.warn('Cloud pull during sync failed:', e);
@@ -355,19 +378,33 @@ async function _loadFromServer() {
   const uuid = _getSaveUuid();
   if (!uuid) return;
   try {
-    const res = await _fetchWithTimeout(`${SAVE_SERVER}/save/${uuid}`, {}, SAVE_FETCH_TIMEOUT_MS.load);
-    if (!res.ok) { _setCloudStatus('online'); await _pushLocal(); return; }
-    const cloudSave = await res.json();
+    const supabase = _getSupabaseClient();
+    const { data, error } = await supabase
+      .from('player_saves')
+      .select('save_data')
+      .eq('user_id', uuid)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') {
+      console.warn('Load from server failed:', error);
+      _setCloudStatus('offline');
+      return;
+    }
+
+    const cloudSave = data && data.save_data ? data.save_data : null;
     _setCloudStatus('online');
+
+    if (!cloudSave) {
+      await _pushLocal();
+      return;
+    }
+
     const hasLocal = SYNC_KEYS.some(k => localStorage.getItem(k) !== null);
     const firstTime = !localStorage.getItem('poke_last_cloud_sync');
     if (hasLocal && firstTime) {
       if (confirm('A cloud save was found. Load it? (Local progress will be overwritten)')) {
         _applyCloudSave(cloudSave);
       }
-      // Either branch: push so the cloud reflects this device. Declining the
-      // prompt keeps local untouched, in which case the push wins for the
-      // user's chosen device.
       await _pushLocal();
     } else {
       _applyCloudSave(cloudSave);
@@ -465,23 +502,47 @@ function _showAuthModal() {
     const btn = document.getElementById(endpoint === '/login' ? 'auth-login-btn' : 'auth-register-btn');
     btn.disabled = true; btn.textContent = '...';
     try {
-      const res = await _fetchWithTimeout(`${SAVE_SERVER}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      }, SAVE_FETCH_TIMEOUT_MS.auth);
+      const supabase = _getSupabaseClient();
+      const email = _usernameToEmail(username);
+      let result;
+
+      if (endpoint === '/login') {
+        result = await supabase.auth.signInWithPassword({ email, password });
+      } else {
+        result = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { username } }
+        });
+      }
+
+      const { data, error } = result;
+      if (error) {
+        _setCloudStatus('offline');
+        showErr(error.message || 'Something went wrong.');
+        btn.disabled = false; btn.textContent = endpoint === '/login' ? 'Log In' : 'Register';
+        return;
+      }
+
+      const user = data?.user;
+      if (!user) {
+        _setCloudStatus('offline');
+        showErr('No account returned by Supabase.');
+        btn.disabled = false; btn.textContent = endpoint === '/login' ? 'Log In' : 'Register';
+        return;
+      }
+
+      localStorage.setItem('poke_save_uuid', user.id);
+      localStorage.setItem('poke_username', username);
       _setCloudStatus('online');
-      const data = await res.json();
-      if (!res.ok) { showErr(data.error || 'Something went wrong.'); btn.disabled = false; btn.textContent = endpoint === '/login' ? 'Log In' : 'Register'; return; }
-      localStorage.setItem('poke_save_uuid', data.uuid);
-      localStorage.setItem('poke_username', data.username);
       modal.remove();
       _updateSyncUI();
       await _loadFromServer();
       if (typeof initGame === 'function') initGame();
     } catch (e) {
       _setCloudStatus('offline');
-      showErr('Could not reach save server.'); btn.disabled = false; btn.textContent = endpoint === '/login' ? 'Log In' : 'Register';
+      showErr('Could not reach Supabase. Check your URL and anon key.');
+      btn.disabled = false; btn.textContent = endpoint === '/login' ? 'Log In' : 'Register';
     }
   }
 
