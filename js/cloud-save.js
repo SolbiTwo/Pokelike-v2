@@ -20,9 +20,33 @@ function _fetchWithTimeout(url, opts = {}, ms = SAVE_FETCH_TIMEOUT_MS.load) {
 }
 
 function _getSupabaseClient() {
-  if (typeof window === 'undefined' || !window.supabase) {
-    throw new Error('Supabase client not loaded. Set the URL and anon key in index.html.');
+  if (typeof window === 'undefined') {
+    throw new Error('Supabase client not available outside the browser.');
   }
+
+  if (!window.supabase) {
+    const url = window.__SUPABASE_CONFIG?.url || SUPABASE_URL;
+    const anonKey = window.__SUPABASE_CONFIG?.anonKey || SUPABASE_ANON_KEY;
+
+    if (!url || !anonKey || url.includes('YOUR_PROJECT_ID') || anonKey.includes('YOUR_')) {
+      throw new Error('Supabase is not configured. Set the real project URL and anon key in index.html.');
+    }
+
+    if (typeof supabase !== 'undefined' && supabase.createClient) {
+      window.supabase = supabase.createClient(url, anonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+        },
+      });
+    }
+  }
+
+  if (!window.supabase) {
+    throw new Error('Supabase client not loaded. Check the CDN script and your project config.');
+  }
+
   return window.supabase;
 }
 
@@ -540,8 +564,9 @@ function _showAuthModal() {
       await _loadFromServer();
       if (typeof initGame === 'function') initGame();
     } catch (e) {
+      console.error('Supabase auth failed:', e);
       _setCloudStatus('offline');
-      showErr('Could not reach Supabase. Check your URL and anon key.');
+      showErr(e?.message || 'Could not reach Supabase. Check your URL and anon key.');
       btn.disabled = false; btn.textContent = endpoint === '/login' ? 'Log In' : 'Register';
     }
   }
