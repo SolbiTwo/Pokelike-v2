@@ -34,7 +34,7 @@ Then open http://127.0.0.1:8000/ in your browser.
 - Pokémon and trainer sprites are loaded at runtime from external CDNs (PokeAPI and
   Pokémon Showdown), so an internet connection is required.
 - Game saves use the browser's `localStorage`.
-- `cloud-save.js` talks to an external server; the game works fine without it.
+- `cloud-save.js` talks to an external server; (supabase) the game works fine without it. you just don't have account
 
 ## Modifying
 
@@ -48,7 +48,7 @@ sponsored by Nintendo, Game Freak, or The Pokémon Company.
 Pokémon and related names and characters are trademarks of their
 respective owners.
 
-### Thanks
+## Thanks
 
 I thanks pcasaspere for his job.
 The original pokelike_v2 is not deployed on a website so I copied all the code and pushed it on vercel the login is done by a supabase backend 
