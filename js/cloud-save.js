@@ -24,7 +24,7 @@ function _getSupabaseClient() {
     throw new Error('Supabase client not available outside the browser.');
   }
 
-  if (!window.supabase) {
+  if (!window.supabase && typeof supabase !== 'undefined' && supabase.createClient) {
     const url = window.__SUPABASE_CONFIG?.url || SUPABASE_URL;
     const anonKey = window.__SUPABASE_CONFIG?.anonKey || SUPABASE_ANON_KEY;
 
@@ -32,18 +32,16 @@ function _getSupabaseClient() {
       throw new Error('Supabase is not configured. Set the real project URL and anon key in index.html.');
     }
 
-    if (typeof supabase !== 'undefined' && supabase.createClient) {
-      window.supabase = supabase.createClient(url, anonKey, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true,
-        },
-      });
-    }
+    window.supabase = supabase.createClient(url, anonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    });
   }
 
-  if (!window.supabase) {
+  if (!window.supabase || !window.supabase.auth) {
     throw new Error('Supabase client not loaded. Check the CDN script and your project config.');
   }
 

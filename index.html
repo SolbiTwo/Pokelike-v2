@@ -409,10 +409,20 @@
     url: 'https://uhihaxjcgilpvkzpdahd.supabase.co',
     anonKey: 'sb_publishable_7U0XJlS2mxaC8v6KvANHgQ_4A06HxfW'
   };
-  window.supabase = window.supabase || supabase.createClient(
-    window.__SUPABASE_CONFIG.url,
-    window.__SUPABASE_CONFIG.anonKey
-  );
+
+  if (typeof window !== 'undefined' && !window.supabase && typeof supabase !== 'undefined') {
+    window.supabase = supabase.createClient(
+      window.__SUPABASE_CONFIG.url,
+      window.__SUPABASE_CONFIG.anonKey,
+      {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+        },
+      }
+    );
+  }
 </script>
 
 <!-- Scripts (order matters). Loaded with an auto cache-buster so edits always
