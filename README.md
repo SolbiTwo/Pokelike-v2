@@ -48,5 +48,11 @@ sponsored by Nintendo, Game Freak, or The Pokémon Company.
 Pokémon and related names and characters are trademarks of their
 respective owners.
 
+### Thanks
+
+I thanks pcasaspere for his job.
+The original pokelike_v2 is not deployed on a website so I copied all the code and pushed it on vercel the login is done by a supabase backend 
+the original pokelike-v2 : https://github.com/pcasaspere/pokelike_v2
+
 Fork of [pokelike.xyz](https://pokelike.xyz/).
 "# Pokelike-v2" 
